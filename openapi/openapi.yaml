@@ -1,0 +1,561 @@
+openapi: 3.0.3
+info:
+  title: Gym API
+  version: 1.0.0
+  description: |
+    API-first backend for gym memberships and subscriptions.
+    Successful responses use `{ success, data, meta? }`.
+    Errors use `{ success: false, error: { code, message, details? } }`.
+servers:
+  - url: http://localhost:3000
+tags:
+  - name: Auth
+  - name: Users
+  - name: Members
+  - name: Plans
+  - name: Subscriptions
+  - name: Payments
+  - name: Attendance
+  - name: Reports
+  - name: Jobs
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Page:
+      in: query
+      name: page
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      in: query
+      name: pageSize
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Sort:
+      in: query
+      name: sort
+      schema: { type: string, example: createdAt:desc }
+    Id:
+      in: path
+      name: id
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    Error:
+      type: object
+      required: [success, error]
+      properties:
+        success: { type: boolean, enum: [false] }
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: {}
+    Tokens:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        expiresIn: { type: string, example: 15m }
+    Plan:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        price: { type: string, example: "39.99" }
+        currency: { type: string, example: USD }
+        duration: { type: string, enum: [monthly, quarterly, yearly] }
+        benefits: { type: array, items: { type: string } }
+        isActive: { type: boolean }
+    Subscription:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        memberId: { type: string, format: uuid }
+        planId: { type: string, format: uuid }
+        scheduledPlanId: { type: string, format: uuid, nullable: true }
+        status: { type: string, enum: [pending, active, paused, expired, cancelled] }
+        startDate: { type: string, format: date-time, nullable: true }
+        endDate: { type: string, format: date-time, nullable: true }
+        nextRenewalAt: { type: string, format: date-time, nullable: true }
+        autoRenew: { type: boolean }
+        priceAmount: { type: string }
+        currency: { type: string }
+paths:
+  /health:
+    get:
+      tags: [Auth]
+      summary: Liveness probe
+      responses:
+        "200": { description: Process is up }
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a member account and profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, firstName, lastName]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+                firstName: { type: string }
+                lastName: { type: string }
+                phone: { type: string, nullable: true }
+      responses:
+        "201": { description: Account created }
+        "400": { description: Validation error }
+        "409": { description: Email already in use }
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with email and password
+      responses:
+        "200": { description: Access and refresh tokens }
+        "401": { description: Invalid credentials }
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate a refresh token
+      responses:
+        "200": { description: New token pair }
+        "401": { description: Invalid, expired or reused token }
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      summary: Revoke the presented refresh token
+      responses:
+        "200": { description: Revoked }
+  /api/v1/auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Send a password reset token
+      responses:
+        "200": { description: Generic acknowledgement }
+  /api/v1/auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Set a new password with a reset token
+      responses:
+        "200": { description: Password updated and sessions revoked }
+        "400": { description: Invalid token }
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      summary: Current user and member profile
+      responses:
+        "200": { description: Profile }
+  /api/v1/users:
+    get:
+      tags: [Users]
+      security: [{ bearerAuth: [] }]
+      summary: List users
+      parameters: [{ $ref: "#/components/parameters/Page" }, { $ref: "#/components/parameters/PageSize" }, { $ref: "#/components/parameters/Sort" }]
+      responses:
+        "200": { description: User page }
+    post:
+      tags: [Users]
+      security: [{ bearerAuth: [] }]
+      summary: Create an admin, staff or member user
+      responses:
+        "201": { description: Created }
+  /api/v1/users/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Users]
+      security: [{ bearerAuth: [] }]
+      summary: Get a user
+      responses:
+        "200": { description: User }
+    patch:
+      tags: [Users]
+      security: [{ bearerAuth: [] }]
+      summary: Update account fields
+      responses:
+        "200": { description: Updated }
+    delete:
+      tags: [Users]
+      security: [{ bearerAuth: [] }]
+      summary: Soft-delete a user
+      responses:
+        "200": { description: Deleted }
+  /api/v1/users/{id}/role:
+    patch:
+      tags: [Users]
+      security: [{ bearerAuth: [] }]
+      summary: Change a user's role
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Updated }
+  /api/v1/users/{id}/status:
+    patch:
+      tags: [Users]
+      security: [{ bearerAuth: [] }]
+      summary: Activate or deactivate a user
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Updated }
+  /api/v1/members:
+    get:
+      tags: [Members]
+      security: [{ bearerAuth: [] }]
+      summary: List members
+      responses:
+        "200": { description: Member page }
+    post:
+      tags: [Members]
+      security: [{ bearerAuth: [] }]
+      summary: Create a member and login
+      responses:
+        "201": { description: Created }
+  /api/v1/members/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Members]
+      security: [{ bearerAuth: [] }]
+      summary: Get a member profile
+      responses:
+        "200": { description: Member }
+    patch:
+      tags: [Members]
+      security: [{ bearerAuth: [] }]
+      summary: Update profile, contact and emergency contact
+      responses:
+        "200": { description: Updated }
+    delete:
+      tags: [Members]
+      security: [{ bearerAuth: [] }]
+      summary: Soft-delete a member and deactivate the login
+      responses:
+        "200": { description: Deleted }
+  /api/v1/members/{id}/status:
+    patch:
+      tags: [Members]
+      security: [{ bearerAuth: [] }]
+      summary: Set active, inactive or suspended
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Updated }
+  /api/v1/members/{id}/history:
+    get:
+      tags: [Members]
+      security: [{ bearerAuth: [] }]
+      summary: Subscriptions, payments and check-ins
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: History }
+  /api/v1/plans:
+    get:
+      tags: [Plans]
+      security: [{ bearerAuth: [] }]
+      summary: List plans. Members only receive active plans.
+      responses:
+        "200": { description: Plan page }
+    post:
+      tags: [Plans]
+      security: [{ bearerAuth: [] }]
+      summary: Create a plan
+      responses:
+        "201": { description: Created }
+  /api/v1/plans/{id}/members:
+    post:
+      tags: [Plans]
+      security: [{ bearerAuth: [] }]
+      summary: Create a person and enroll them on this plan
+      description: |
+        Admin and staff. Creates the member login and a subscription in one transaction.
+        A completed payment activates the subscription. If the plan is inactive or the email is already in use, nothing is saved.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, firstName, lastName]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                firstName: { type: string }
+                lastName: { type: string }
+                phone: { type: string, nullable: true }
+                startDate: { type: string, format: date-time }
+                autoRenew: { type: boolean }
+                payment:
+                  type: object
+                  required: [method]
+                  properties:
+                    method: { type: string, enum: [cash, card, transfer, gateway] }
+                    amount: { type: string, example: "39.99" }
+                    status: { type: string, enum: [pending, completed, failed] }
+      responses:
+        "201": { description: Member and subscription created }
+        "409": { description: Email in use or plan unavailable }
+  /api/v1/plans/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Plans]
+      security: [{ bearerAuth: [] }]
+      summary: Get a plan
+      responses:
+        "200": { description: Plan }
+    patch:
+      tags: [Plans]
+      security: [{ bearerAuth: [] }]
+      summary: Update a plan
+      responses:
+        "200": { description: Updated }
+    delete:
+      tags: [Plans]
+      security: [{ bearerAuth: [] }]
+      summary: Soft-delete a plan
+      responses:
+        "200": { description: Deleted }
+  /api/v1/plans/{id}/status:
+    patch:
+      tags: [Plans]
+      security: [{ bearerAuth: [] }]
+      summary: Activate or deactivate a plan
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Updated }
+  /api/v1/subscriptions:
+    get:
+      tags: [Subscriptions]
+      security: [{ bearerAuth: [] }]
+      summary: List subscriptions
+      responses:
+        "200": { description: Subscription page }
+    post:
+      tags: [Subscriptions]
+      security: [{ bearerAuth: [] }]
+      summary: Create a pending subscription. A completed payment activates it.
+      responses:
+        "201": { description: Created }
+        "409": { description: Member already has an open subscription }
+  /api/v1/subscriptions/{id}:
+    get:
+      tags: [Subscriptions]
+      security: [{ bearerAuth: [] }]
+      summary: Get a subscription
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Subscription }
+  /api/v1/subscriptions/{id}/activate:
+    post:
+      tags: [Subscriptions]
+      security: [{ bearerAuth: [] }]
+      summary: Activate a pending subscription
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Active }
+  /api/v1/subscriptions/{id}/renew:
+    post:
+      tags: [Subscriptions]
+      security: [{ bearerAuth: [] }]
+      summary: Extend an active subscription or restart an expired one
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Renewed }
+  /api/v1/subscriptions/{id}/pause:
+    post:
+      tags: [Subscriptions]
+      security: [{ bearerAuth: [] }]
+      summary: Freeze the remaining time
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Paused }
+  /api/v1/subscriptions/{id}/resume:
+    post:
+      tags: [Subscriptions]
+      security: [{ bearerAuth: [] }]
+      summary: Resume and shift the end date by the paused duration
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Active }
+  /api/v1/subscriptions/{id}/cancel:
+    post:
+      tags: [Subscriptions]
+      security: [{ bearerAuth: [] }]
+      summary: Cancel access immediately
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Cancelled }
+  /api/v1/subscriptions/{id}/change-plan:
+    post:
+      tags: [Subscriptions]
+      security: [{ bearerAuth: [] }]
+      summary: Change plan immediately or at the next renewal
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [planId, mode]
+              properties:
+                planId: { type: string, format: uuid }
+                mode: { type: string, enum: [immediate, next_cycle] }
+      responses:
+        "200": { description: Plan updated }
+  /api/v1/subscriptions/{id}/events:
+    get:
+      tags: [Subscriptions]
+      security: [{ bearerAuth: [] }]
+      summary: Subscription change history
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Events }
+  /api/v1/payments:
+    get:
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      summary: List payments
+      responses:
+        "200": { description: Payment page }
+    post:
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      summary: Record a payment. Completed payments activate a pending subscription.
+      responses:
+        "201": { description: Recorded }
+  /api/v1/payments/intents:
+    post:
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      summary: Create a gateway intent through the payment adapter
+      responses:
+        "201": { description: Pending payment and client secret }
+  /api/v1/payments/{id}:
+    get:
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      summary: Get a payment
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Payment }
+  /api/v1/payments/{id}/refund:
+    post:
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      summary: Mark a completed payment as refunded
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Refunded }
+  /api/v1/webhooks/payments/{provider}:
+    post:
+      tags: [Payments]
+      summary: Payment provider webhook. manual requires X-Gym-Signature HMAC SHA-256.
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema: { type: string, enum: [manual, stripe] }
+      responses:
+        "200": { description: Applied }
+        "401": { description: Invalid signature }
+  /api/v1/attendance/check-in:
+    post:
+      tags: [Attendance]
+      security: [{ bearerAuth: [] }]
+      summary: Check in when the member is active and the subscription covers now
+      responses:
+        "201": { description: Checked in }
+        "422": { description: Check-in denied }
+  /api/v1/attendance:
+    get:
+      tags: [Attendance]
+      security: [{ bearerAuth: [] }]
+      summary: List check-ins
+      responses:
+        "200": { description: Check-in page }
+  /api/v1/attendance/{id}:
+    get:
+      tags: [Attendance]
+      security: [{ bearerAuth: [] }]
+      summary: Get a check-in
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Check-in }
+  /api/v1/reports/members/active:
+    get:
+      tags: [Reports]
+      security: [{ bearerAuth: [] }]
+      summary: Members with an active subscription
+      responses:
+        "200": { description: Report }
+  /api/v1/reports/revenue:
+    get:
+      tags: [Reports]
+      security: [{ bearerAuth: [] }]
+      summary: Gross, refunds and net by currency
+      parameters:
+        - in: query
+          name: from
+          required: true
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          required: true
+          schema: { type: string, format: date-time }
+      responses:
+        "200": { description: Revenue }
+  /api/v1/reports/subscriptions/expiring:
+    get:
+      tags: [Reports]
+      security: [{ bearerAuth: [] }]
+      summary: Active subscriptions ending within N days
+      parameters:
+        - in: query
+          name: withinDays
+          schema: { type: integer, default: 7, minimum: 1, maximum: 90 }
+      responses:
+        "200": { description: Expiring subscriptions }
+  /api/v1/reports/renewal-rate:
+    get:
+      tags: [Reports]
+      security: [{ bearerAuth: [] }]
+      summary: renewed / (renewed + expired + cancelled) in the period
+      parameters:
+        - in: query
+          name: from
+          required: true
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          required: true
+          schema: { type: string, format: date-time }
+      responses:
+        "200": { description: Renewal rate }
+  /api/v1/jobs/subscriptions/expire:
+    post:
+      tags: [Jobs]
+      security: [{ bearerAuth: [] }]
+      summary: Expire due subscriptions and cancel stale pending ones
+      responses:
+        "200": { description: Job result }
+  /api/v1/jobs/subscriptions/reminders:
+    post:
+      tags: [Jobs]
+      security: [{ bearerAuth: [] }]
+      summary: Create upcoming expiration reminders
+      responses:
+        "200": { description: Reminders created }
+  /api/v1/reminders:
+    get:
+      tags: [Jobs]
+      security: [{ bearerAuth: [] }]
+      summary: List reminders
+      responses:
+        "200": { description: Reminder page }

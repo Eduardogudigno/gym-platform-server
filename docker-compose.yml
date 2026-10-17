@@ -1,0 +1,76 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: gym
+      MYSQL_USER: gym
+      MYSQL_PASSWORD: gym
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - gym_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      LOG_LEVEL: info
+      TRUST_PROXY: "false"
+      CORS_ORIGIN: http://localhost:5173
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: gym
+      DB_USER: gym
+      DB_PASSWORD: gym
+      JWT_ACCESS_SECRET: change-me-access-secret
+      JWT_REFRESH_SECRET: change-me-refresh-secret
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL: 7d
+      BCRYPT_ROUNDS: 10
+      DEFAULT_CURRENCY: USD
+      BUSINESS_TIMEZONE: UTC
+      SUBSCRIPTION_PENDING_TTL_HOURS: 72
+      REMINDER_DAYS: 7,3,1
+      ENABLE_CRON: "true"
+      CRON_SCHEDULE: "*/15 * * * *"
+      RATE_LIMIT_WINDOW_MS: 900000
+      RATE_LIMIT_MAX: 300
+      AUTH_RATE_LIMIT_WINDOW_MS: 900000
+      AUTH_RATE_LIMIT_MAX: 30
+      SEED_ADMIN_EMAIL: admin@gym.local
+      SEED_ADMIN_PASSWORD: ChangeMe123!
+      SEED_ADMIN_FIRST_NAME: System
+      SEED_ADMIN_LAST_NAME: Admin
+      SEED_DEMO_PASSWORD: ChangeMe123!
+      PAYMENT_GATEWAY: manual
+      WEBHOOK_SECRET: change-me-webhook-secret
+    depends_on:
+      mysql:
+        condition: service_healthy
+    command: sh -c "node dist/database/migrate.js && node dist/database/seed.js && node dist/server.js"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  gym_mysql:
